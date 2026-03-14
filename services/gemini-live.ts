@@ -1,88 +1,83 @@
 /**
- * Serwis Gemini Live API - WebSocket client
- * @see https://ai.google.dev/gemini-api/docs/live-api/get-started-websocket
- * @see https://github.com/google-gemini/gemini-live-api-examples
+ * Serwis Gemini Live API – WebSocket client
+ * Model: gemini-2.5-flash-native-audio-preview-12-2025 (zalecany przez Google)
+ * Audio wejście: PCM 16kHz, 16-bit, mono, little-endian
+ * Audio wyjście: PCM 24kHz, 16-bit, mono, little-endian
  */
 
-const MODEL_NAME = 'gemini-2.5-flash-native-audio-preview-12-2025';
+const MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025';
+const WS_BASE = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 
 export type GeminiLiveMessageType =
-  | 'TEXT'
   | 'AUDIO'
+  | 'TEXT'
   | 'SETUP_COMPLETE'
   | 'INTERRUPTED'
   | 'TURN_COMPLETE'
-  | 'TOOL_CALL'
-  | 'ERROR'
   | 'INPUT_TRANSCRIPTION'
   | 'OUTPUT_TRANSCRIPTION';
 
 export interface GeminiLiveResponse {
   type: GeminiLiveMessageType;
   data: string | { text: string; finished?: boolean } | object;
-  endOfTurn: boolean;
 }
 
 export interface GeminiLiveCallbacks {
-  onReceiveResponse?: (msg: GeminiLiveResponse) => void;
   onOpen?: () => void;
+  onSetupComplete?: () => void;
   onClose?: (reason?: string) => void;
   onError?: (msg: string) => void;
+  onReceiveResponse?: (msg: GeminiLiveResponse) => void;
 }
 
 export class GeminiLiveService {
-  private apiKey: string;
   private ws: WebSocket | null = null;
   private callbacks: GeminiLiveCallbacks = {};
   private connected = false;
-  private wsUrl: string;
 
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-    this.wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
-  }
+  constructor(private apiKey: string) {}
 
-  setCallbacks(callbacks: GeminiLiveCallbacks) {
-    this.callbacks = { ...this.callbacks, ...callbacks };
+  setCallbacks(cb: GeminiLiveCallbacks) {
+    this.callbacks = { ...this.callbacks, ...cb };
   }
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(this.wsUrl);
+      this.ws = new WebSocket(`${WS_BASE}?key=${this.apiKey}`);
 
       this.ws.onopen = () => {
         this.connected = true;
-        this.sendConfig();
+        this.sendSetup();
         this.callbacks.onOpen?.();
         resolve();
       };
 
-      this.ws.onerror = (event) => {
+      this.ws.onerror = () => {
         this.connected = false;
         this.callbacks.onError?.('Błąd połączenia WebSocket');
         reject(new Error('WebSocket error'));
       };
 
-      this.ws.onclose = (event) => {
+      this.ws.onclose = (e) => {
         this.connected = false;
-        const reason = event.code !== 1000 ? ` (kod: ${event.code}${event.reason ? `, ${event.reason}` : ''})` : '';
+        const reason = e.code !== 1000
+          ? ` (kod: ${e.code}${e.reason ? `, ${e.reason}` : ''})`
+          : '';
         this.callbacks.onClose?.(reason);
       };
 
-      this.ws.onmessage = (event) => this.handleMessage(event);
+      this.ws.onmessage = (e) => this.handleMessage(e);
     });
   }
 
-  private sendConfig() {
-    const setupMessage = {
+  private sendSetup() {
+    this.send({
       setup: {
-        model: `models/${MODEL_NAME}`,
+        model: `models/${MODEL}`,
         generationConfig: {
           responseModalities: ['AUDIO'],
           speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Puck' },
-            },
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
           },
         },
         systemInstruction: {
@@ -90,21 +85,54 @@ export class GeminiLiveService {
         },
         inputAudioTranscription: {},
         outputAudioTranscription: {},
-        // Wykrywanie końca mowy – serwer sam wie, kiedy przestałeś mówić
-        // @see https://github.com/google-gemini/gemini-live-api-examples/blob/main/gemini-live-ephemeral-tokens-websocket/frontend/geminilive.js
         realtimeInputConfig: {
           automaticActivityDetection: {
             disabled: false,
-            silenceDurationMs: 1500, // Po 1.5 s ciszy = koniec wypowiedzi
-            prefixPaddingMs: 300, // 300 ms przed początkiem mowy
-            endOfSpeechSensitivity: 'END_SENSITIVITY_UNSPECIFIED',
-            startOfSpeechSensitivity: 'START_SENSITIVITY_UNSPECIFIED',
+            prefixPaddingMs: 500,
+            silenceDurationMs: 1500,
           },
-          activityHandling: 'START_OF_ACTIVITY_INTERRUPTS', // barge-in – możesz przerwać odpowiedź
+          activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
         },
       },
-    };
-    this.send(setupMessage);
+    });
+  }
+
+  // Wyślij audio PCM (base64, 16kHz, 16-bit, mono, little-endian)
+  sendAudio(base64Pcm: string) {
+    this.send({
+      realtimeInput: {
+        audio: { data: base64Pcm, mimeType: 'audio/pcm;rate=16000' },
+      },
+    });
+  }
+
+  // Poinformuj serwer że mikrofon jest wyciszony — ważne dla VAD
+  sendAudioStreamEnd() {
+    this.send({ realtimeInput: { audioStreamEnd: true } });
+  }
+
+  // Wiadomość tekstowa od użytkownika
+  sendText(text: string) {
+    this.send({ realtimeInput: { text } });
+  }
+
+  // Klatka wideo (JPEG base64)
+  sendVideoFrame(base64Jpeg: string) {
+    this.send({
+      realtimeInput: {
+        video: { data: base64Jpeg, mimeType: 'image/jpeg' },
+      },
+    });
+  }
+
+  disconnect() {
+    this.ws?.close();
+    this.ws = null;
+    this.connected = false;
+  }
+
+  isConnected() {
+    return this.connected && this.ws?.readyState === WebSocket.OPEN;
   }
 
   private send(msg: object) {
@@ -114,121 +142,50 @@ export class GeminiLiveService {
   }
 
   private async handleMessage(event: MessageEvent) {
-    let jsonData: string;
+    let text: string;
     if (event.data instanceof Blob) {
-      jsonData = await event.data.text();
+      text = await event.data.text();
     } else if (event.data instanceof ArrayBuffer) {
-      jsonData = new TextDecoder().decode(event.data);
+      text = new TextDecoder().decode(event.data);
     } else {
-      jsonData = event.data as string;
+      text = event.data as string;
     }
 
     try {
-      const data = JSON.parse(jsonData);
-      const msg = this.parseResponse(data);
-      if (msg) this.callbacks.onReceiveResponse?.(msg);
+      const msg = this.parseResponse(JSON.parse(text));
+      if (!msg) return;
+      if (msg.type === 'SETUP_COMPLETE') {
+        this.callbacks.onSetupComplete?.();
+      }
+      this.callbacks.onReceiveResponse?.(msg);
     } catch (err) {
-      console.error('Gemini Live parse error:', err);
+      console.error('[GeminiLive] parse error:', err);
     }
   }
 
-  private parseResponse(data: Record<string, unknown>): GeminiLiveResponse | null {
-    const serverContent = data?.serverContent as Record<string, unknown> | undefined;
-    const parts = (serverContent?.modelTurn as Record<string, unknown>)?.parts as Array<Record<string, unknown>> | undefined;
+  private parseResponse(d: Record<string, unknown>): GeminiLiveResponse | null {
+    const sc = d?.serverContent as Record<string, unknown> | undefined;
+    const parts = (sc?.modelTurn as Record<string, unknown>)?.parts as Record<string, unknown>[] | undefined;
 
-    const response: GeminiLiveResponse = {
-      type: 'ERROR',
-      data: '',
-      endOfTurn: !!serverContent?.turnComplete,
-    };
+    if (d?.setupComplete) return { type: 'SETUP_COMPLETE', data: '' };
+    if (sc?.turnComplete) return { type: 'TURN_COMPLETE', data: '' };
+    if (sc?.interrupted) return { type: 'INTERRUPTED', data: '' };
 
-    if (data?.setupComplete) {
-      response.type = 'SETUP_COMPLETE';
-      return response;
+    if (sc?.inputTranscription) {
+      const it = sc.inputTranscription as Record<string, unknown>;
+      return { type: 'INPUT_TRANSCRIPTION', data: { text: (it.text as string) ?? '', finished: it.finished as boolean } };
     }
-    if (serverContent?.turnComplete) {
-      response.type = 'TURN_COMPLETE';
-      return response;
-    }
-    if (serverContent?.interrupted) {
-      response.type = 'INTERRUPTED';
-      return response;
-    }
-    if (serverContent?.inputTranscription) {
-      const it = serverContent.inputTranscription as Record<string, unknown>;
-      response.type = 'INPUT_TRANSCRIPTION';
-      response.data = {
-        text: (it.text as string) || '',
-        finished: (it.finished as boolean) ?? false,
-      };
-      return response;
-    }
-    if (serverContent?.outputTranscription) {
-      const ot = serverContent.outputTranscription as Record<string, unknown>;
-      response.type = 'OUTPUT_TRANSCRIPTION';
-      response.data = {
-        text: (ot.text as string) || '',
-        finished: (ot.finished as boolean) ?? false,
-      };
-      return response;
-    }
-    if (data?.toolCall) {
-      response.type = 'TOOL_CALL';
-      response.data = data.toolCall as object;
-      return response;
-    }
-    if (parts?.[0]?.text) {
-      response.type = 'TEXT';
-      response.data = parts[0].text as string;
-      return response;
+    if (sc?.outputTranscription) {
+      const ot = sc.outputTranscription as Record<string, unknown>;
+      return { type: 'OUTPUT_TRANSCRIPTION', data: { text: (ot.text as string) ?? '', finished: ot.finished as boolean } };
     }
     if (parts?.[0]?.inlineData) {
       const inline = parts[0].inlineData as Record<string, unknown>;
-      response.type = 'AUDIO';
-      response.data = (inline.data as string) || '';
-      return response;
+      return { type: 'AUDIO', data: (inline.data as string) ?? '' };
     }
-
+    if (parts?.[0]?.text) {
+      return { type: 'TEXT', data: parts[0].text as string };
+    }
     return null;
-  }
-
-  sendText(text: string) {
-    this.send({
-      realtimeInput: { text },
-    });
-  }
-
-  sendAudio(base64Pcm: string) {
-    this.send({
-      realtimeInput: {
-        audio: {
-          data: base64Pcm,
-          mimeType: 'audio/pcm;rate=16000',
-        },
-      },
-    });
-  }
-
-  sendVideoFrame(base64Jpeg: string) {
-    this.send({
-      realtimeInput: {
-        video: {
-          data: base64Jpeg,
-          mimeType: 'image/jpeg',
-        },
-      },
-    });
-  }
-
-  disconnect() {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-    this.connected = false;
-  }
-
-  isConnected() {
-    return this.connected && this.ws?.readyState === WebSocket.OPEN;
   }
 }
