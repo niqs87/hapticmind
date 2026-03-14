@@ -7,6 +7,9 @@
 const INPUT_SAMPLE_RATE = 16000; // Gemini wymaga 16 kHz
 const OUTPUT_SAMPLE_RATE = 24000; // Gemini zwraca 24 kHz
 
+/** Wzmocnienie mikrofonu – 2.0 = cichsza mowa lepiej słyszalna */
+const MIC_GAIN = 2.0;
+
 type SendAudioFn = (base64: string) => void;
 
 /** Callback z poziomem głośności 0–1 do wizualizacji */
@@ -20,6 +23,7 @@ export class WebAudioStreamer {
   private onAudio: SendAudioFn;
   private onLevelUpdate?: OnLevelUpdateFn;
   private isStreaming = false;
+  private isMuted = false;
   private analyserAnimationId: number | null = null;
 
   constructor(onAudio: SendAudioFn, onLevelUpdate?: OnLevelUpdateFn) {
@@ -46,7 +50,7 @@ export class WebAudioStreamer {
 
     this.isStreaming = true; // przed connect, żeby callback od razu obsługiwał
     this.processor.onaudioprocess = (e) => {
-      if (!this.isStreaming) return;
+      if (!this.isStreaming || this.isMuted) return;
       const input = e.inputBuffer.getChannelData(0);
       if (this.onLevelUpdate) {
         const rms = Math.sqrt(input.reduce((s, x) => s + x * x, 0) / input.length);
@@ -64,8 +68,20 @@ export class WebAudioStreamer {
     silentGain.connect(this.audioContext.destination);
   }
 
+  /** Wstrzymaj wysyłanie audio – podczas odtwarzania odpowiedzi AI (ogranicza echo). */
+  pause(): void {
+    this.isMuted = true;
+    this.onLevelUpdate?.(0);
+  }
+
+  /** Wznów wysyłanie audio po zakończeniu odtwarzania. */
+  resume(): void {
+    this.isMuted = false;
+  }
+
   stop() {
     this.isStreaming = false;
+    this.isMuted = false;
     if (this.analyserAnimationId) {
       cancelAnimationFrame(this.analyserAnimationId);
       this.analyserAnimationId = null;
@@ -83,7 +99,7 @@ export class WebAudioStreamer {
   private float32ToPcm16(float32: Float32Array): ArrayBuffer {
     const int16 = new Int16Array(float32.length);
     for (let i = 0; i < float32.length; i++) {
-      const s = Math.max(-1, Math.min(1, float32[i]));
+      const s = Math.max(-1, Math.min(1, float32[i] * MIC_GAIN));
       int16[i] = s * 0x7fff;
     }
     return int16.buffer;

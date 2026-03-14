@@ -1,19 +1,46 @@
 /**
- * Natywny streamer audio dla Gemini Live API (iOS)
+ * Natywny streamer audio dla Gemini Live API (expo-audio, iOS)
  * Format wejściowy wymagany przez API: PCM 16kHz, 16-bit, mono, little-endian
  *
- * Mikrofon NIGDY nie jest wyłączany (nawet podczas playbacku) — Gemini VAD
- * automatycznie wykrywa mowę i obsługuje przerwania (interruptions).
+ * Wymaga przekazania rejestratora z useAudioRecorder (hook musi być w komponencie).
+ * Mikrofon NIGDY nie jest wyłączany — Gemini VAD automatycznie wykrywa mowę.
  * @see https://ai.google.dev/gemini-api/docs/live-guide
  */
-import { Audio } from 'expo-av';
-import { Recording } from 'expo-av/build/Audio/Recording';
-import type { RecordingOptions } from 'expo-av/build/Audio/Recording';
+import {
+  type AudioRecorder,
+  IOSOutputFormat,
+  AudioQuality,
+  RecordingPresets,
+  type RecordingOptions,
+} from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 
 const SAMPLE_RATE = 16000;
 const CHUNK_MS = 300;
+
+/** Wzmocnienie mikrofonu – 1.0 = brak, 2.0 = 2× głośniej. Zwiększ, jeśli musisz krzyczeć. */
+const MIC_GAIN = 2.0;
+
+/** Opcje nagrywania PCM dla Gemini (16 kHz, LPCM na iOS) – bazuje na presetcie */
+export const GEMINI_RECORDING_OPTIONS: RecordingOptions = {
+  ...RecordingPresets.HIGH_QUALITY,
+  extension: '.caf',
+  sampleRate: SAMPLE_RATE,
+  numberOfChannels: 1,
+  bitRate: SAMPLE_RATE * 16,
+  isMeteringEnabled: true,
+  ios: {
+    ...RecordingPresets.HIGH_QUALITY.ios,
+    extension: '.caf',
+    outputFormat: IOSOutputFormat.LINEARPCM,
+    audioQuality: AudioQuality.MAX,
+    sampleRate: SAMPLE_RATE,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+};
 
 function extractPcmFromCaf(base64: string): Uint8Array | null {
   try {
@@ -33,9 +60,10 @@ function extractPcmFromCaf(base64: string): Uint8Array | null {
 
       if (type === 'data') {
         const dataStart = offset + 4; // skip 4-byte editCount
-        const dataEnd = chunkSize > 0 && chunkSize < bytes.length
-          ? Math.min(offset + Number(chunkSize), bytes.length)
-          : bytes.length;
+        const dataEnd =
+          chunkSize > 0 && chunkSize < bytes.length
+            ? Math.min(offset + Number(chunkSize), bytes.length)
+            : bytes.length;
         if (dataEnd > dataStart) {
           return bytes.slice(dataStart, dataEnd);
         }
@@ -45,7 +73,23 @@ function extractPcmFromCaf(base64: string): Uint8Array | null {
       else break;
     }
     return null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
+}
+
+/** Zastosuj wzmocnienie do PCM 16-bit LE. Mnoży próbki i obcina do zakresu int16. */
+function applyGainToPcm16(pcm: Uint8Array, gain: number): Uint8Array {
+  if (gain === 1 || pcm.length < 2) return pcm;
+  const out = new Uint8Array(pcm.length);
+  const dvIn = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+  const dvOut = new DataView(out.buffer, out.byteOffset, out.byteLength);
+  for (let i = 0; i < pcm.length; i += 2) {
+    const s = dvIn.getInt16(i, true);
+    const amplified = Math.max(-32768, Math.min(32767, Math.round(s * gain)));
+    dvOut.setInt16(i, amplified, true);
+  }
+  return out;
 }
 
 function pcmToBase64(pcm: Uint8Array): string {
@@ -54,70 +98,52 @@ function pcmToBase64(pcm: Uint8Array): string {
   return btoa(s);
 }
 
-const IOS_RECORD_OPTIONS: RecordingOptions = {
-  isMeteringEnabled: true,
-  ios: {
-    extension: '.caf',
-    outputFormat: 'lpcm',
-    audioQuality: 64,
-    sampleRate: SAMPLE_RATE,
-    numberOfChannels: 1,
-    bitRate: SAMPLE_RATE * 16,
-    linearPCMBitDepth: 16,
-    linearPCMIsBigEndian: false,
-    linearPCMIsFloat: false,
-  },
-  android: {
-    extension: '.3gp',
-    outputFormat: 1,
-    audioEncoder: 1,
-    sampleRate: SAMPLE_RATE,
-    numberOfChannels: 1,
-    bitRate: 128000,
-  },
-  web: {},
-};
-
 type SendAudioFn = (base64: string) => void;
 export type OnLevelUpdateFn = (level: number) => void;
 export type StreamerState = 'idle' | 'recording' | 'sending';
 
 export class NativeAudioStreamer {
+  private recorder: AudioRecorder;
   private sendAudio: SendAudioFn;
   private onLevelUpdate?: OnLevelUpdateFn;
   private onStateChange?: (s: StreamerState) => void;
   private isStreaming = false;
+  private isPaused = false;
 
   constructor(
+    recorder: AudioRecorder,
     sendAudio: SendAudioFn,
     onLevelUpdate?: OnLevelUpdateFn,
     onStateChange?: (s: StreamerState) => void,
   ) {
+    this.recorder = recorder;
     this.sendAudio = sendAudio;
     this.onLevelUpdate = onLevelUpdate;
     this.onStateChange = onStateChange;
   }
 
-  async start(): Promise<void> {
-    const { granted } = await Audio.requestPermissionsAsync();
-    if (!granted) throw new Error('Brak dostępu do mikrofonu');
-
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false, // głośnik (jak telefon na stole)
-    });
-
+  start(): void {
+    if (Platform.OS !== 'ios') return;
     this.isStreaming = true;
-    if (Platform.OS === 'ios') this.runLoop();
+    this.runLoop();
   }
 
   stop(): void {
     this.isStreaming = false;
+    this.isPaused = false;
     this.onLevelUpdate?.(0);
     this.onStateChange?.('idle');
+  }
+
+  /** Wstrzymaj wysyłanie audio – podczas odtwarzania odpowiedzi AI (ogranicza echo). */
+  pause(): void {
+    this.isPaused = true;
+    this.onLevelUpdate?.(0);
+  }
+
+  /** Wznów wysyłanie audio po zakończeniu odtwarzania. */
+  resume(): void {
+    this.isPaused = false;
   }
 
   private async runLoop(): Promise<void> {
@@ -127,15 +153,19 @@ export class NativeAudioStreamer {
   }
 
   private async recordAndSend(): Promise<void> {
-    const recording = new Recording();
     try {
-      await recording.prepareToRecordAsync(IOS_RECORD_OPTIONS);
-      await recording.startAsync();
+      if (this.isPaused) {
+        await new Promise((r) => setTimeout(r, 100));
+        return;
+      }
+
+      await this.recorder.prepareToRecordAsync(GEMINI_RECORDING_OPTIONS);
+      this.recorder.record();
       this.onStateChange?.('recording');
 
-      const meteringId = setInterval(async () => {
+      const meteringId = setInterval(() => {
         try {
-          const s = await recording.getStatusAsync();
+          const s = this.recorder.getStatus();
           if (s.isRecording && s.metering !== undefined) {
             const level = Math.max(0, Math.min(1, (s.metering + 40) / 40));
             this.onLevelUpdate?.(level);
@@ -143,31 +173,39 @@ export class NativeAudioStreamer {
         } catch {}
       }, 100);
 
-      await new Promise(r => setTimeout(r, CHUNK_MS));
+      await new Promise((r) => setTimeout(r, CHUNK_MS));
       clearInterval(meteringId);
 
       if (!this.isStreaming) {
-        await recording.stopAndUnloadAsync().catch(() => {});
+        await this.recorder.stop().catch(() => {});
         return;
       }
 
       this.onStateChange?.('sending');
-      const uri = recording.getURI();
-      await recording.stopAndUnloadAsync();
+      await this.recorder.stop();
+      const uri = this.recorder.getStatus().url ?? (this.recorder as { uri?: string | null }).uri;
       if (!uri) return;
+
+      // iOS: krótkie opóźnienie – plik może jeszcze nie być zapisany na dysk
+      await new Promise((r) => setTimeout(r, 80));
+
+      const info = await FileSystem.getInfoAsync(uri).catch(() => null);
+      if (!info?.exists) return;
 
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
       FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
 
-      const pcm = extractPcmFromCaf(base64);
+      let pcm = extractPcmFromCaf(base64);
       if (pcm && pcm.length > 0) {
+        pcm = applyGainToPcm16(pcm, MIC_GAIN);
         this.sendAudio(pcmToBase64(pcm));
       }
     } catch (err) {
+      if (String(err).includes('does not exist')) return;
       console.warn('[NativeAudioStreamer]', err);
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 100));
     }
   }
 }
