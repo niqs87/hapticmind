@@ -1,0 +1,77 @@
+{
+  "expo": {
+    "name": "hapticmind",
+    "slug": "hapticmind",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "hapticmind",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Aplikacja potrzebuje dostępu do kamery do transmisji wideo na żywo z asystentem AI.",
+        "NSMicrophoneUsageDescription": "Aplikacja potrzebuje dostępu do mikrofonu do rozmowy głosowej z asystentem AI."
+      }
+    },
+    "android": {
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.VIBRATE"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Aplikacja potrzebuje dostępu do kamery do transmisji wideo na żywo z asystentem AI.",
+          "microphonePermission": "Aplikacja potrzebuje dostępu do mikrofonu do rozmowy głosowej z asystentem AI."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Aplikacja potrzebuje dostępu do mikrofonu do nagrywania i wysyłania dźwięku do asystenta AI."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "dark": {
+            "backgroundColor": "#000000"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c4b9f1bd-9c6a-4f39-b376-1b008a956183"
+      }
+    },
+    "owner": "niqs"
+  }
+}
