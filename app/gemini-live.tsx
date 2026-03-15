@@ -277,7 +277,13 @@ export default function GeminiLiveScreen() {
   const flushAudioBufferAndEnd = useCallback(() => {
     const chunks = audioBufferRef.current;
     audioBufferRef.current = [];
-    if (DEBUG_AUDIO) console.log("[Audio] flush:", chunks.length, "chunks, connected:", !!serviceRef.current?.isConnected());
+    if (DEBUG_AUDIO)
+      console.log(
+        "[Audio] flush:",
+        chunks.length,
+        "chunks, connected:",
+        !!serviceRef.current?.isConnected(),
+      );
     if (!serviceRef.current?.isConnected()) return;
     for (const base64 of chunks) {
       serviceRef.current.sendAudio(base64);
@@ -291,7 +297,9 @@ export default function GeminiLiveScreen() {
     if (IS_WEB) return;
     setMicPermission("checking");
     import("@speechmatics/expo-two-way-audio")
-      .then(({ getMicrophonePermissionsAsync }) => getMicrophonePermissionsAsync())
+      .then(({ getMicrophonePermissionsAsync }) =>
+        getMicrophonePermissionsAsync(),
+      )
       .then((r) => setMicPermission(r.granted ? "granted" : "denied"))
       .catch(() => setMicPermission("denied"));
   }, []);
@@ -799,7 +807,11 @@ export default function GeminiLiveScreen() {
     micHoldingRef.current = false;
     setMicHolding(false);
     chunksFromMicRef.current = 0;
-    if (DEBUG_AUDIO) console.log("[Audio] hold end, buffer size:", audioBufferRef.current.length);
+    if (DEBUG_AUDIO)
+      console.log(
+        "[Audio] hold end, buffer size:",
+        audioBufferRef.current.length,
+      );
     audioStreamerRef.current?.pause(); // Web
     // Native: NIE wywołuj pause – mikrofon włączony cały czas, listenModeRef filtruje
     if (micReleaseTimerRef.current) clearTimeout(micReleaseTimerRef.current);
@@ -853,10 +865,8 @@ export default function GeminiLiveScreen() {
       return;
     }
     if (!isWebAudio) {
-      const {
-        requestMicrophonePermissionsAsync,
-        initialize,
-      } = await import("@speechmatics/expo-two-way-audio");
+      const { requestMicrophonePermissionsAsync, initialize } =
+        await import("@speechmatics/expo-two-way-audio");
       const { granted } = await requestMicrophonePermissionsAsync();
       setMicPermission(granted ? "granted" : "denied");
       if (!granted) {
@@ -890,7 +900,12 @@ export default function GeminiLiveScreen() {
             if (micHoldingRef.current && serviceRef.current?.isConnected()) {
               chunksFromMicRef.current += 1;
               if (DEBUG_AUDIO && chunksFromMicRef.current <= 5) {
-                console.log("[Audio] chunk #" + chunksFromMicRef.current + " len=" + (base64?.length ?? 0));
+                console.log(
+                  "[Audio] chunk #" +
+                    chunksFromMicRef.current +
+                    " len=" +
+                    (base64?.length ?? 0),
+                );
               }
               serviceRef.current.sendAudio(base64);
             } else {
@@ -907,7 +922,9 @@ export default function GeminiLiveScreen() {
           } else {
             const streamer = new NativeAudioStreamer(onAudioChunk);
             nativeStreamerRef.current = streamer;
-            streamer.start().catch((e) => setError("Mikrofon: " + (e as Error).message));
+            streamer
+              .start()
+              .catch((e) => setError("Mikrofon: " + (e as Error).message));
           }
         },
         onClose: (reason) => {
@@ -917,9 +934,23 @@ export default function GeminiLiveScreen() {
         onError: (msg) => setError(msg),
         onReceiveResponse: (msg: GeminiLiveResponse) => {
           if (msg.type === "SETUP_COMPLETE") return;
-          if (DEBUG_AUDIO && (msg.type === "INPUT_TRANSCRIPTION" || msg.type === "OUTPUT_TRANSCRIPTION" || msg.type === "AUDIO")) {
-            const d = typeof msg.data === "object" && msg.data && "text" in msg.data ? (msg.data as { text: string }).text : msg.type === "AUDIO" ? `base64(${(msg.data as string)?.length ?? 0})` : "";
-            console.log("[Audio] Gemini:", msg.type, d ? (d.length > 40 ? d.slice(0, 40) + "…" : d) : "");
+          if (
+            DEBUG_AUDIO &&
+            (msg.type === "INPUT_TRANSCRIPTION" ||
+              msg.type === "OUTPUT_TRANSCRIPTION" ||
+              msg.type === "AUDIO")
+          ) {
+            const d =
+              typeof msg.data === "object" && msg.data && "text" in msg.data
+                ? (msg.data as { text: string }).text
+                : msg.type === "AUDIO"
+                  ? `base64(${(msg.data as string)?.length ?? 0})`
+                  : "";
+            console.log(
+              "[Audio] Gemini:",
+              msg.type,
+              d ? (d.length > 40 ? d.slice(0, 40) + "…" : d) : "",
+            );
           }
           if (
             msg.type === "OUTPUT_TRANSCRIPTION" &&
@@ -1160,7 +1191,9 @@ export default function GeminiLiveScreen() {
               <View style={{ flexDirection: "row", gap: 10 }}>
                 <Pressable
                   onPress={
-                    inputMode === "tapping" ? enterListenMode : enterKeyboardMode
+                    inputMode === "tapping"
+                      ? enterListenMode
+                      : enterKeyboardMode
                   }
                   style={styles.holdButton}
                 >
@@ -1520,20 +1553,24 @@ export default function GeminiLiveScreen() {
               </View>
             )}
 
-            {/* Camera switch */}
-            {connected && inputChosen && !listenMode && !keyboardMode && (
-              <Pressable
-                style={styles.cameraSwitch}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setCameraFacing((f) => (f === "front" ? "back" : "front"));
-                }}
-              >
-                <Text style={styles.cameraSwitchText}>
-                  {cameraFacing === "front" ? "Tył" : "Przód"}
-                </Text>
-              </Pressable>
-            )}
+            {/* Camera switch - ukryte, do wdrożenia w kolejnej wersji */}
+            {false &&
+              connected &&
+              inputChosen &&
+              !listenMode &&
+              !keyboardMode && (
+                <Pressable
+                  style={styles.cameraSwitch}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setCameraFacing((f) => (f === "front" ? "back" : "front"));
+                  }}
+                >
+                  <Text style={styles.cameraSwitchText}>
+                    {cameraFacing === "front" ? "Tył" : "Przód"}
+                  </Text>
+                </Pressable>
+              )}
           </Pressable>
         </View>
 
@@ -1732,7 +1769,6 @@ export default function GeminiLiveScreen() {
                   </Text>
                 </View>
               )}
-
             </View>
           </View>
         </View>
@@ -2202,7 +2238,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.zinc900,
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 24,
+    paddingBottom: 70,
   },
   bottomContent: {
     flexDirection: "row",
@@ -2220,9 +2257,9 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   leftCharBox: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
+    width: 64,
+    height: 64,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: "rgba(255,255,0,0.4)",
     alignItems: "center",
@@ -2230,7 +2267,7 @@ const styles = StyleSheet.create({
   },
   leftChar: {
     color: Colors.primary,
-    fontSize: 28,
+    fontSize: 34,
     fontWeight: "700",
   },
   leftStatusBadge: {
@@ -2265,9 +2302,9 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   decodedText: {
-    fontSize: 26,
+    fontSize: 32,
     fontWeight: "700",
-    lineHeight: 36,
+    lineHeight: 44,
     minHeight: 72,
   },
   posInfo: {
