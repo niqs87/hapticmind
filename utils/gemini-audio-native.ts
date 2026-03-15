@@ -2,8 +2,8 @@
  * Odtwarzanie audio PCM z Gemini Live API (expo-audio)
  * Wyjście API: PCM 24kHz, 16-bit, mono, little-endian
  *
- * Tryb jak w aplikacji Gemini od Google: głośnik (shouldRouteThroughEarpiece: false),
- * mikrofon cały czas włączony (allowsRecording: true) – umożliwia przerywanie.
+ * Jeden tryb audio (GEMINI_AUDIO_MODE) – bez przełączania record/playback.
+ * Przerywanie wyłącznie przez użytkownika (hold mic).
  */
 import {
   createAudioPlayer,
@@ -18,7 +18,7 @@ const PLAYBACK_STATUS_UPDATE = 'playbackStatusUpdate';
 
 const SAMPLE_RATE = 24000;
 
-/** Tryb audio podczas nagrywania – playAndRecord, mikrofon włączony. */
+/** Tryb nagrywania – playAndRecord (mikrofon). */
 export const GEMINI_AUDIO_MODE = {
   allowsRecording: true,
   playsInSilentMode: true,
@@ -27,19 +27,17 @@ export const GEMINI_AUDIO_MODE = {
   shouldRouteThroughEarpiece: false,
 } as const;
 
-/** Tryb odtwarzania – playback bez nagrywania = głośnik (iOS rutuje do earpiece gdy allowsRecording). */
+/** Tryb odtwarzania – głośnik (allowsRecording: false). */
 const PLAYBACK_SPEAKER_MODE = {
   ...GEMINI_AUDIO_MODE,
   allowsRecording: false,
 } as const;
 
-async function ensureSpeaker() {
+export async function ensureSpeaker() {
   if (Platform.OS === 'web') return;
-  // Playback-only = głośnik. Bez tego iOS po 1–3 s przełącza na earpiece (playAndRecord).
   await setAudioModeAsync(PLAYBACK_SPEAKER_MODE).catch(() => {});
 }
 
-/** Przywróć tryb z mikrofonem po zakończeniu odtwarzania. */
 export async function restoreRecordingMode() {
   if (Platform.OS === 'web') return;
   await setAudioModeAsync(GEMINI_AUDIO_MODE).catch(() => {});
@@ -84,24 +82,12 @@ function merge(chunks: Uint8Array[]): Uint8Array {
   return out;
 }
 
-export type NativeAudioPlayerCallbacks = {
-  onPlayStart?: () => void;
-  onPlayEnd?: () => void;
-};
-
 export class NativeAudioPlayer {
-  private callbacks?: NativeAudioPlayerCallbacks;
   private queue: Uint8Array[] = [];
   private playing = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private player: AudioPlayer | null = null;
   private currentUri: string | null = null;
-  /** Tylko gdy true – onPlayEnd wywoływane po zakończeniu odtwarzania. Zapobiega przedwczesnemu resume przy pustej kolejce w trakcie tury. */
-  private turnComplete = false;
-
-  constructor(callbacks?: NativeAudioPlayerCallbacks) {
-    this.callbacks = callbacks;
-  }
 
   addChunk(base64Pcm: string): void {
     this.queue.push(decode(base64Pcm));
@@ -110,16 +96,7 @@ export class NativeAudioPlayer {
     }
   }
 
-  finishTurn(): void {
-    this.turnComplete = true;
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    this.flush();
-  }
-
-  /** Natychmiast zatrzymaj odtwarzanie, wyczyść kolejkę. Mikrofon i tak cały czas nagrywa i wysyła do API. */
+  /** Natychmiast zatrzymaj odtwarzanie, wyczyść kolejkę. */
   interrupt(): void {
     if (this.timer) {
       clearTimeout(this.timer);
@@ -133,35 +110,23 @@ export class NativeAudioPlayer {
         this.currentUri = null;
       }
     }
-    if (this.playing) {
-      this.playing = false;
-      this.callbacks?.onPlayEnd?.();
-    }
+    this.playing = false;
   }
 
   private flush(): void {
     this.timer = null;
     if (this.queue.length === 0) {
-      if (this.playing) {
-        this.playing = false;
-        if (this.turnComplete) {
-          this.turnComplete = false;
-          setTimeout(() => this.callbacks?.onPlayEnd?.(), 3000);
-        }
-      }
+      this.playing = false;
       return;
     }
 
-    if (!this.playing) {
-      this.playing = true;
-      this.callbacks?.onPlayStart?.();
-    }
+    if (!this.playing) this.playing = true;
 
     const pcm = merge(this.queue.splice(0));
     this.playRawPcm(pcm).catch(() => {
       this.currentUri = null;
       this.playing = false;
-      this.callbacks?.onPlayEnd?.();
+      this.flush();
     });
   }
 
@@ -182,7 +147,9 @@ export class NativeAudioPlayer {
     });
     this.currentUri = uri;
 
-    await ensureSpeaker();
+    if (Platform.OS !== 'web') {
+      await ensureSpeaker();
+    }
 
     const player = createAudioPlayer(null, { updateInterval: 100 });
     this.player = player;

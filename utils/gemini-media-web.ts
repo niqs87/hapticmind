@@ -7,8 +7,8 @@
 const INPUT_SAMPLE_RATE = 16000; // Gemini wymaga 16 kHz
 const OUTPUT_SAMPLE_RATE = 24000; // Gemini zwraca 24 kHz
 
-/** Wzmocnienie mikrofonu – 2.0 = cichsza mowa lepiej słyszalna */
-const MIC_GAIN = 2.0;
+/** Wzmocnienie mikrofonu – 1.2 = delikatne. Zbyt wysokie może powodować clipping i zniekształconą transkrypcję. */
+const MIC_GAIN = 1.2;
 
 type SendAudioFn = (base64: string) => void;
 
