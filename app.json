@@ -12,16 +12,13 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Aplikacja potrzebuje dostępu do kamery do transmisji wideo na żywo z asystentem AI.",
-        "NSMicrophoneUsageDescription": "Aplikacja potrzebuje dostępu do mikrofonu do rozmowy głosowej z asystentem AI."
+        "NSMicrophoneUsageDescription": "Aplikacja potrzebuje dostępu do mikrofonu do rozmowy głosowej z asystentem AI.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "com.niqs.hapticmind"
     },
     "android": {
       "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.VIBRATE",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
         "android.permission.VIBRATE",
