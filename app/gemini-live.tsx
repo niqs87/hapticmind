@@ -861,7 +861,7 @@ export default function GeminiLiveScreen() {
   // --- Connect ---
   const connect = useCallback(async () => {
     if (!API_KEY) {
-      setError("Ustaw EXPO_PUBLIC_GEMINI_API_KEY w .env");
+      setError("Set EXPO_PUBLIC_GEMINI_API_KEY in .env");
       return;
     }
     if (!isWebAudio) {
@@ -870,7 +870,7 @@ export default function GeminiLiveScreen() {
       const { granted } = await requestMicrophonePermissionsAsync();
       setMicPermission(granted ? "granted" : "denied");
       if (!granted) {
-        setError("Potrzebny dostęp do mikrofonu – włącz w Ustawieniach");
+        setError("Microphone access required – enable in Settings");
         return;
       }
       try {
@@ -918,18 +918,18 @@ export default function GeminiLiveScreen() {
             streamer
               .start()
               .then(() => streamer.pause())
-              .catch((e) => setError("Mikrofon: " + (e as Error).message));
+              .catch((e) => setError("Microphone: " + (e as Error).message));
           } else {
             const streamer = new NativeAudioStreamer(onAudioChunk);
             nativeStreamerRef.current = streamer;
             streamer
               .start()
-              .catch((e) => setError("Mikrofon: " + (e as Error).message));
+              .catch((e) => setError("Microphone: " + (e as Error).message));
           }
         },
         onClose: (reason) => {
           setConnected(false);
-          if (reason) setError(`Połączenie zamknięte${reason}`);
+          if (reason) setError(`Connection closed${reason}`);
         },
         onError: (msg) => setError(msg),
         onReceiveResponse: (msg: GeminiLiveResponse) => {
@@ -1567,7 +1567,7 @@ export default function GeminiLiveScreen() {
                   }}
                 >
                   <Text style={styles.cameraSwitchText}>
-                    {cameraFacing === "front" ? "Tył" : "Przód"}
+                    {cameraFacing === "front" ? "Back" : "Front"}
                   </Text>
                 </Pressable>
               )}
@@ -1763,7 +1763,7 @@ export default function GeminiLiveScreen() {
                       })
                     ) : (
                       <Text style={{ color: Colors.zinc600 }}>
-                        Połącz się i mów – AI opisze otoczenie.
+                        Connect and speak – AI will describe your surroundings.
                       </Text>
                     )}
                   </Text>

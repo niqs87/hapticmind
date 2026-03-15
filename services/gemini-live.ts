@@ -55,7 +55,7 @@ export class GeminiLiveService {
 
       this.ws.onerror = () => {
         this.connected = false;
-        this.callbacks.onError?.("Błąd połączenia WebSocket");
+        this.callbacks.onError?.("WebSocket connection error");
         reject(new Error("WebSocket error"));
       };
 
@@ -63,7 +63,7 @@ export class GeminiLiveService {
         this.connected = false;
         const reason =
           e.code !== 1000
-            ? ` (kod: ${e.code}${e.reason ? `, ${e.reason}` : ""})`
+            ? ` (code: ${e.code}${e.reason ? `, ${e.reason}` : ""})`
             : "";
         this.callbacks.onClose?.(reason);
       };

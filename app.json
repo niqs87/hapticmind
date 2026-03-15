@@ -11,8 +11,8 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "Aplikacja potrzebuje dostępu do kamery do transmisji wideo na żywo z asystentem AI.",
-        "NSMicrophoneUsageDescription": "Aplikacja potrzebuje dostępu do mikrofonu do rozmowy głosowej z asystentem AI.",
+        "NSCameraUsageDescription": "The app needs camera access for live video streaming with the AI assistant.",
+        "NSMicrophoneUsageDescription": "The app needs microphone access for voice conversation with the AI assistant.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "com.niqs.hapticmind"
@@ -47,8 +47,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Aplikacja potrzebuje dostępu do kamery do transmisji wideo na żywo z asystentem AI.",
-          "microphonePermission": "Aplikacja potrzebuje dostępu do mikrofonu do rozmowy głosowej z asystentem AI."
+          "cameraPermission": "The app needs camera access for live video streaming with the AI assistant.",
+          "microphonePermission": "The app needs microphone access for voice conversation with the AI assistant."
         }
       ],
       [
