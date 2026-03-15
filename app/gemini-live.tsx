@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
+import { useKeepAwake } from "expo-keep-awake";
 import { useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -155,6 +156,7 @@ function BrailleMatrix({
 }
 
 export default function GeminiLiveScreen() {
+  useKeepAwake();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const router = useRouter();
