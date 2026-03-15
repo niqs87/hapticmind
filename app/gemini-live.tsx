@@ -1256,26 +1256,6 @@ export default function GeminiLiveScreen() {
               </View>
             )}
 
-            {/* Transcript overlay – zawsze gdy jest treść (równie w trakcie mówienia) */}
-            {connected &&
-              !keyboardMode &&
-              (currentUserSpeech || currentReply) && (
-                <View style={styles.transcriptOverlayContainer}>
-                  <View style={styles.transcriptOverlay}>
-                    {currentUserSpeech ? (
-                      <Text style={styles.overlayUser}>
-                        {currentUserSpeech}
-                      </Text>
-                    ) : null}
-                    {currentReply ? (
-                      <Text style={styles.overlayAI} numberOfLines={4}>
-                        {currentReply}
-                      </Text>
-                    ) : null}
-                  </View>
-                </View>
-              )}
-
             {/* Mic hold button */}
             {connected && inputChosen && inputMode === "mic" && (
               <View style={styles.micHoldContainer}>
@@ -1723,7 +1703,28 @@ export default function GeminiLiveScreen() {
               ) : (
                 <View style={{ flex: 1, justifyContent: "center" }}>
                   <Text style={styles.aiResponseText}>
-                    {currentReply || (
+                    {words.length > 0 ? (
+                      words.map((word, wi) => {
+                        const isActive = wi === wordIdx;
+                        const isPast = wi < wordIdx;
+                        return (
+                          <Text
+                            key={wi}
+                            style={{
+                              color: isActive
+                                ? Colors.primary
+                                : isPast
+                                  ? "rgba(255,255,255,0.28)"
+                                  : "rgba(255,255,255,0.72)",
+                              fontWeight: isActive ? "700" : "400",
+                            }}
+                          >
+                            {word}
+                            {wi < words.length - 1 ? " " : ""}
+                          </Text>
+                        );
+                      })
+                    ) : (
                       <Text style={{ color: Colors.zinc600 }}>
                         Połącz się i mów – AI opisze otoczenie.
                       </Text>
@@ -1966,31 +1967,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: 2,
     color: "rgba(255,255,255,0.15)",
-  },
-  transcriptOverlayContainer: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  transcriptOverlay: {
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 16,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    maxWidth: "90%",
-    gap: 6,
-  },
-  overlayUser: {
-    color: "rgba(255,255,255,0.55)",
-    fontSize: 14,
-    fontStyle: "italic",
-    lineHeight: 20,
-  },
-  overlayAI: {
-    color: Colors.primary,
-    fontSize: 16,
-    lineHeight: 23,
-    fontWeight: "500",
   },
   micHoldContainer: {
     position: "absolute",
@@ -2306,8 +2282,7 @@ const styles = StyleSheet.create({
     fontSize: 8,
   },
   aiResponseText: {
-    fontSize: 20,
-    lineHeight: 28,
-    color: Colors.primary,
+    fontSize: 28,
+    lineHeight: 40,
   },
 });
