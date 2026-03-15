@@ -1016,7 +1016,7 @@ export default function GeminiLiveScreen() {
         const photo = await cameraRef.current.takePictureAsync({
           quality: 0.7,
           base64: true,
-          // skipProcessing: false (domyślnie) – zapewnia poprawną orientację obrazu
+          shutterSound: false,
         });
         if (photo?.base64) serviceRef.current.sendVideoFrame(photo.base64);
       } catch {}
