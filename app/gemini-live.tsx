@@ -230,7 +230,6 @@ export default function GeminiLiveScreen() {
   }, [micHolding]);
   const micReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioBufferRef = useRef<string[]>([]);
-  const [chunksFromMic, setChunksFromMic] = useState(0);
   const chunksFromMicRef = useRef(0);
 
   // --- Keyboard state ---
@@ -784,7 +783,6 @@ export default function GeminiLiveScreen() {
     micHoldingRef.current = true;
     setListenMode(true);
     audioBufferRef.current = [];
-    setChunksFromMic(0);
     chunksFromMicRef.current = 0;
     // restart wywoływany w NativeAudioPlayer.interrupt() (przez interruptAll)
     if (DEBUG_AUDIO) console.log("[Audio] hold start, resuming streamer");
@@ -800,7 +798,6 @@ export default function GeminiLiveScreen() {
     if (!micHolding) return;
     micHoldingRef.current = false;
     setMicHolding(false);
-    setChunksFromMic(0);
     chunksFromMicRef.current = 0;
     if (DEBUG_AUDIO) console.log("[Audio] hold end, buffer size:", audioBufferRef.current.length);
     audioStreamerRef.current?.pause(); // Web
@@ -892,9 +889,6 @@ export default function GeminiLiveScreen() {
             if (!listenModeRef.current) return;
             if (micHoldingRef.current && serviceRef.current?.isConnected()) {
               chunksFromMicRef.current += 1;
-              if (chunksFromMicRef.current <= 5 || chunksFromMicRef.current % 50 === 0) {
-                setChunksFromMic(chunksFromMicRef.current);
-              }
               if (DEBUG_AUDIO && chunksFromMicRef.current <= 5) {
                 console.log("[Audio] chunk #" + chunksFromMicRef.current + " len=" + (base64?.length ?? 0));
               }
@@ -1004,7 +998,6 @@ export default function GeminiLiveScreen() {
     setConnected(false);
     setCurrentReply("");
     setCurrentUserSpeech("");
-    setChunksFromMic(0);
     chunksFromMicRef.current = 0;
     setWordIdx(0);
     setLetterIdx(0);
@@ -1283,12 +1276,6 @@ export default function GeminiLiveScreen() {
                 </View>
               )}
 
-            {/* Debug: licznik chunków – tylko gdy trzymasz przycisk (tylko __DEV__) */}
-            {__DEV__ && connected && inputMode === "mic" && micHolding && (
-              <View style={{ position: "absolute", top: 100, left: 16, backgroundColor: "rgba(0,0,0,0.7)", padding: 6, borderRadius: 8 }}>
-                <Text style={{ color: "#fff", fontSize: 12 }}>Chunks: {chunksFromMic}</Text>
-              </View>
-            )}
             {/* Mic hold button */}
             {connected && inputChosen && inputMode === "mic" && (
               <View style={styles.micHoldContainer}>
@@ -1304,11 +1291,6 @@ export default function GeminiLiveScreen() {
                     micHolding ? "Release to send" : "Hold to speak"
                   }
                 >
-                  {__DEV__ && micHolding && (
-                    <Text style={styles.chunksDebug}>
-                      chunks: {chunksFromMic}
-                    </Text>
-                  )}
                   <Feather
                     name={micHolding ? "radio" : "mic"}
                     size={18}
@@ -1890,10 +1872,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 2,
-  },
-  chunksDebug: {
-    fontSize: 10,
-    color: "rgba(255,255,255,0.8)",
   },
   holdButtonTextActive: {
     color: Colors.primary,
