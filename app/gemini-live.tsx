@@ -17,7 +17,6 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Circle } from "react-native-svg";
 
 import type { InputMode } from "@/components/InputChooserModal";
 import { InputChooserModal } from "@/components/InputChooserModal";
@@ -212,6 +211,7 @@ export default function GeminiLiveScreen() {
   const [inputPos, setInputPos] = useState(-1);
   const [charCount, setCharCount] = useState(0);
   const [decodedText, setDecodedText] = useState("");
+  const decodedTextRef = useRef("");
   const [lastDecodedChar, setLastDecodedChar] = useState<string | null>(null);
   const sendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [tapThreshold, setTapThreshold] = useState(DEFAULT_THRESHOLD);
@@ -220,6 +220,7 @@ export default function GeminiLiveScreen() {
   const [currentPressDur, setCurrentPressDur] = useState(0);
   const pressAnimRef = useRef<number | null>(null);
   const finishTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const demoTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // --- Mic state ---
   const [micHolding, setMicHolding] = useState(false);
@@ -529,7 +530,11 @@ export default function GeminiLiveScreen() {
     if (inputPos !== 6) return;
     const ch = dotsToChar(tapDots);
     setLastDecodedChar(ch);
-    setDecodedText((prev) => prev + ch);
+    setDecodedText((prev) => {
+      const next = prev + ch;
+      decodedTextRef.current = next;
+      return next;
+    });
     setCharCount((c) => c + 1);
     if (Platform.OS !== "web")
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -549,6 +554,7 @@ export default function GeminiLiveScreen() {
       if (kbFocusTimer.current) clearTimeout(kbFocusTimer.current);
       if (micReleaseTimerRef.current) clearTimeout(micReleaseTimerRef.current);
       finishTimers.current.forEach(clearTimeout);
+      demoTimersRef.current.forEach(clearTimeout);
     };
   }, []);
 
@@ -572,12 +578,13 @@ export default function GeminiLiveScreen() {
     finishTimers.current.forEach(clearTimeout);
     finishTimers.current = [];
 
-    const textToSend = decodedText.trim();
-
     finishTimers.current.push(
       setTimeout(() => {
+        const textToSend = decodedTextRef.current.trim();
         if (textToSend && serviceRef.current?.isConnected()) {
+          serviceRef.current.sendActivityStart();
           serviceRef.current.sendText(textToSend);
+          serviceRef.current.sendActivityEnd();
         }
         setListenPhase("received");
         finishTimers.current.push(
@@ -589,6 +596,7 @@ export default function GeminiLiveScreen() {
             setInputPos(-1);
             setCharCount(0);
             setDecodedText("");
+            decodedTextRef.current = "";
             setLastDecodedChar(null);
             setTapThreshold(DEFAULT_THRESHOLD);
             tapDurationsRef.current = [];
@@ -598,7 +606,7 @@ export default function GeminiLiveScreen() {
         );
       }, 800),
     );
-  }, [decodedText]);
+  }, []);
 
   // --- Enter listen mode (tapping) ---
   const enterListenMode = useCallback(() => {
@@ -610,6 +618,7 @@ export default function GeminiLiveScreen() {
     setInputPos(-1);
     setCharCount(0);
     setDecodedText("");
+    decodedTextRef.current = "";
     setLastDecodedChar(null);
     setTapThreshold(DEFAULT_THRESHOLD);
     tapDurationsRef.current = [];
@@ -620,6 +629,77 @@ export default function GeminiLiveScreen() {
     if (Platform.OS !== "web")
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
   }, [interruptAll]);
+
+  // --- Demo: symulacja wpisywania braille ---
+  const runDemo = useCallback(() => {
+    demoTimersRef.current.forEach(clearTimeout);
+    demoTimersRef.current = [];
+
+    const DEMO_TEXT = "WHAT DO YOU SEE AROUND ME";
+    const DOT_DELAY = 120;
+
+    interruptAll();
+    listenModeRef.current = true;
+    setListenMode(true);
+    setListenPhase("tapping");
+    setTapDots(Array(6).fill(false));
+    setInputPos(-1);
+    setCharCount(0);
+    setDecodedText("");
+    decodedTextRef.current = "";
+    setLastDecodedChar(null);
+    if (Platform.OS !== "web")
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+    let t = 400;
+
+    for (let ci = 0; ci < DEMO_TEXT.length; ci++) {
+      const ch = DEMO_TEXT[ci];
+      const dots: boolean[] = BRAILLE_MAP[ch] ?? BRAILLE_MAP[" "];
+
+      const startT = t;
+      demoTimersRef.current.push(
+        setTimeout(() => {
+          setTapDots(Array(6).fill(false));
+          setInputPos(0);
+        }, startT),
+      );
+      t += DOT_DELAY;
+
+      for (let di = 0; di < 6; di++) {
+        const dotT = t;
+        const dotIdx = TAP_DOT_ORDER[di];
+        const filled = dots[dotIdx];
+
+        demoTimersRef.current.push(
+          setTimeout(() => {
+            setTapDots((prev) => {
+              const nd = [...prev];
+              nd[dotIdx] = filled;
+              return nd;
+            });
+            setInputPos(di + 1);
+            if (Platform.OS !== "web") {
+              Haptics.impactAsync(
+                filled
+                  ? Haptics.ImpactFeedbackStyle.Heavy
+                  : Haptics.ImpactFeedbackStyle.Light,
+              );
+            }
+          }, dotT),
+        );
+        t += DOT_DELAY;
+      }
+
+      t += CHAR_RESET + 200;
+    }
+
+    demoTimersRef.current.push(
+      setTimeout(() => {
+        finishListening();
+      }, t),
+    );
+  }, [interruptAll, finishListening]);
 
   // --- Tap press in/out (Braille tapping) ---
   const onListenPressIn = useCallback(() => {
@@ -754,7 +834,9 @@ export default function GeminiLiveScreen() {
     const msg = keyboardText.trim();
     if (!msg || !serviceRef.current?.isConnected()) return;
     Haptics.selectionAsync();
+    serviceRef.current.sendActivityStart();
     serviceRef.current.sendText(msg);
+    serviceRef.current.sendActivityEnd();
     Keyboard.dismiss();
     setKeyboardMode(false);
     setKeyboardText("");
@@ -907,6 +989,8 @@ export default function GeminiLiveScreen() {
     letterTimersRef.current = [];
     finishTimers.current.forEach(clearTimeout);
     finishTimers.current = [];
+    demoTimersRef.current.forEach(clearTimeout);
+    demoTimersRef.current = [];
     audioStreamerRef.current?.stop();
     audioStreamerRef.current = null;
     nativeStreamerRef.current?.stop();
@@ -949,6 +1033,15 @@ export default function GeminiLiveScreen() {
       if (captureIntervalRef.current) clearInterval(captureIntervalRef.current);
     };
   }, [connected, cameraPermission?.granted, cameraFacing, inputMode]);
+
+  // Auto-connect when screen is ready
+  const connectCalledRef = useRef(false);
+  useEffect(() => {
+    if (screenReady && !connected && !connectCalledRef.current) {
+      connectCalledRef.current = true;
+      connect();
+    }
+  }, [screenReady, connected, connect]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener("beforeRemove", () =>
@@ -1071,21 +1164,29 @@ export default function GeminiLiveScreen() {
           !keyboardMode &&
           inputMode !== "mic" && (
             <View style={styles.tapPromptContainer}>
-              <Pressable
-                onPress={
-                  inputMode === "tapping" ? enterListenMode : enterKeyboardMode
-                }
-                style={styles.holdButton}
-              >
-                <Feather
-                  name={inputMode === "tapping" ? "grid" : "type"}
-                  size={18}
-                  color="#000000"
-                />
-                <Text style={styles.holdButtonText}>
-                  {inputMode === "tapping" ? "TAP TO INPUT" : "TAP TO TYPE"}
-                </Text>
-              </Pressable>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <Pressable
+                  onPress={
+                    inputMode === "tapping" ? enterListenMode : enterKeyboardMode
+                  }
+                  style={styles.holdButton}
+                >
+                  <Feather
+                    name={inputMode === "tapping" ? "grid" : "type"}
+                    size={18}
+                    color="#000000"
+                  />
+                  <Text style={styles.holdButtonText}>
+                    {inputMode === "tapping" ? "TAP TO INPUT" : "TAP TO TYPE"}
+                  </Text>
+                </Pressable>
+                {inputMode === "tapping" && (
+                  <Pressable onPress={runDemo} style={styles.demoButton}>
+                    <Feather name="play" size={14} color="#000000" />
+                    <Text style={styles.holdButtonText}>DEMO</Text>
+                  </Pressable>
+                )}
+              </View>
             </View>
           )}
 
@@ -1154,42 +1255,11 @@ export default function GeminiLiveScreen() {
                 ))}
             </View>
 
-            {/* Connect button */}
+            {/* Connecting indicator */}
             {!connected && (
               <View style={styles.connectContainer}>
-                <Pressable
-                  style={styles.holdRingOuter}
-                  onPress={connect}
-                  accessibilityRole="button"
-                  accessibilityLabel="Connect to AI"
-                >
-                  <Svg
-                    width={76}
-                    height={76}
-                    viewBox="0 0 76 76"
-                    style={{
-                      position: "absolute",
-                      transform: [{ rotate: "-90deg" }],
-                    }}
-                  >
-                    <Circle
-                      cx="38"
-                      cy="38"
-                      r="34"
-                      fill="none"
-                      stroke="rgba(255,255,255,0.06)"
-                      strokeWidth="3"
-                    />
-                  </Svg>
-                  <View style={styles.holdInner}>
-                    <Feather
-                      name="mic"
-                      size={20}
-                      color="rgba(255,255,255,0.25)"
-                    />
-                  </View>
-                </Pressable>
-                <Text style={styles.connectLabel}>PRESS TO CONNECT</Text>
+                <View style={styles.connectingSpinner} />
+                <Text style={styles.connectLabel}>CONNECTING...</Text>
               </View>
             )}
 
@@ -1680,11 +1750,6 @@ export default function GeminiLiveScreen() {
                 </View>
               )}
 
-              {connected && (
-                <Pressable style={styles.stopBtn} onPress={disconnect}>
-                  <Text style={styles.stopBtnText}>STOP</Text>
-                </Pressable>
-              )}
             </View>
           </View>
         </View>
@@ -1810,6 +1875,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,0,0.5)",
   },
+  demoButton: {
+    height: 44,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,0,0.6)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
   holdButtonText: {
     color: "#000000",
     fontSize: 11,
@@ -1898,23 +1973,15 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: "center",
-    gap: 8,
+    gap: 12,
   },
-  holdRingOuter: {
-    width: 76,
-    height: 76,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  holdInner: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-    backgroundColor: "rgba(0,0,0,0.5)",
-    alignItems: "center",
-    justifyContent: "center",
+  connectingSpinner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,0,0.15)",
+    borderTopColor: Colors.primary,
   },
   connectLabel: {
     fontSize: 8,
@@ -2264,16 +2331,5 @@ const styles = StyleSheet.create({
     fontSize: 20,
     lineHeight: 28,
     color: Colors.primary,
-  },
-  stopBtn: {
-    backgroundColor: Colors.red,
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  stopBtnText: {
-    color: "#fff",
-    fontWeight: "700",
-    letterSpacing: 2,
   },
 });
